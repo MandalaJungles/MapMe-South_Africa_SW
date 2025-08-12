@@ -1,1 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Cape Town Interactive Map — iPad Touch-Optimized</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
+<style>
+  html, body { height:100%; margin:0; }
+  #map { height:100%; width:100%; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+<script>
+  // Create map
+  const map = L.map('map').setView([-33.9075, 18.4207], 13);
 
+  // Add OpenStreetMap tiles
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Base location marker for 39 Beach Road
+  const baseMarker = L.marker([-33.9075, 18.4207])
+    .addTo(map)
+    .bindPopup("39 Beach Road — Home Base")
+    .openPopup();
+
+  // Example points of interest (V&A Waterfront area)
+  const pois = [
+    { name: "V&A Waterfront", lat: -33.905, lon: 18.420 },
+    { name: "Two Oceans Aquarium", lat: -33.906, lon: 18.417 },
+    { name: "Zeitz MOCAA Museum", lat: -33.907, lon: 18.418 }
+  ];
+
+  pois.forEach(poi => {
+    L.marker([poi.lat, poi.lon]).addTo(map).bindPopup(poi.name);
+  });
+
+  // Example MyCiTi Route 104 polyline (simplified)
+  const route104Coords = [
+    [-33.9075, 18.4207],
+    [-33.912, 18.425],
+    [-33.918, 18.427]
+  ];
+  L.polyline(route104Coords, { color: '#fff6a6', weight: 6, opacity: 0.95 })
+    .addTo(map)
+    .bindPopup("MyCiTi Route 104 (Sample Path)");
+</script>
+</body>
+</html>
