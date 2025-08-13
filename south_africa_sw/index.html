@@ -8,7 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>MapMe — Cape Town (iPad Touch‑Optimized)</title>
 
-<!-- 🔧 Auto cache‑bust the whole page once per load -->
+<!-- Auto cache‑bust the whole page once per load -->
 <script>
   (function () {
     try {
@@ -19,17 +19,14 @@
         var ver = Date.now();
         location.replace(location.pathname + '?v=' + ver + location.hash);
       }
-    } catch(e) { /* no-op */ }
+    } catch(e) {}
   })();
 </script>
 
-<!-- Leaflet CSS -->
 <link rel="preconnect" href="https://unpkg.com">
 <link rel="dns-prefetch" href="https://unpkg.com">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css?v=1" crossorigin="anonymous">
-
 <style>
-  /* iOS-friendly viewport so the URL bar doesn’t bounce the map */
   html, body { height:100svh; height:100%; margin:0; }
   #app { display:flex; height:100%; width:100%; overflow:hidden; }
   #sidebar{
@@ -59,8 +56,6 @@
 <div id="app">
   <div id="sidebar">
     <h1>MapMe — Cape Town</h1>
-
-    <!-- (Removed the three info chips) -->
 
     <div class="group">
       <strong>Base Layers</strong>
@@ -113,12 +108,10 @@
   <div id="map" role="region" aria-label="Interactive Cape Town map"></div>
 </div>
 
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js?v=1" crossorigin="anonymous"></script>
-
 <script>
 (function(){
-  // Map with higher zoom + smoother touch for iPad
+  // ===== Map setup with deeper zoom & smoother touch =====
   const map = L.map('map', {
       zoomControl: true,
       tap: true,
@@ -127,21 +120,20 @@
       zoomDelta: 0.5,
       wheelDebounceTime: 25,
       touchZoom: 'center',
-      maxZoom: 22
+      maxZoom: 23
   }).setView([-33.9075, 18.4207], 14);
 
   const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 22, maxNativeZoom: 19, detectRetina: true, attribution: '&copy; OpenStreetMap'
+    maxZoom: 23, maxNativeZoom: 19, detectRetina: true, attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
   const esriSat = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 22, maxNativeZoom: 19, attribution:'Imagery &copy; Esri' }
+    { maxZoom: 23, maxNativeZoom: 19, attribution:'Imagery &copy; Esri' }
   );
 
   window.addEventListener('orientationchange', ()=> setTimeout(()=> map.invalidateSize(), 250));
   window.addEventListener('resize', ()=> setTimeout(()=> map.invalidateSize(), 250));
-
   document.querySelectorAll('input[name="basemap"]').forEach(r=>{
     r.addEventListener('change', ()=>{
       if (r.value === 'osm'){ map.addLayer(osm); map.removeLayer(esriSat); }
@@ -149,21 +141,20 @@
     });
   });
 
-  // Quick zooms
+  // ===== Quick zooms =====
   document.getElementById('zoomVA').onclick  = ()=> map.setView([-33.9066, 18.4203], 16);
   document.getElementById('zoomCBD').onclick = ()=> map.setView([-33.9249, 18.4241], 16);
   document.getElementById('zoomSeaPoint').onclick = ()=> map.setView([-33.9159, 18.3873], 15);
 
-  // User pins
+  // ===== User pins =====
   const userLayer = L.featureGroup().addTo(map);
   function addDraggableMarker(lat, lon, label){
     const m = L.marker([lat, lon], { draggable:true }).addTo(userLayer);
     m.bindPopup(label || (lat.toFixed(5)+', '+lon.toFixed(5)));
     return m;
   }
-  addDraggableMarker(-33.90750, 18.40930, 'Your Apartment — 39 Beach Road').openPopup();
 
-  // Long‑press to drop a pin; cancel while moving/zooming (prevents “zoom bounce” side effects)
+  // Long‑press to drop a pin; cancel while moving/zooming
   let pressTimer, pressStart=null, moved=false;
   function clearPress(){ clearTimeout(pressTimer); pressTimer=null; pressStart=null; moved=false; }
   map.on('movestart zoomstart dragstart', clearPress);
@@ -174,7 +165,7 @@
   map.on('touchmove', ()=>{ moved=true; });
   map.on('touchend', clearPress);
 
-  // Add‑a‑place
+  // ===== Add‑a‑place =====
   document.getElementById('addBtn').onclick = async ()=>{
     const v = document.getElementById('placeInput').value.trim();
     if(!v) return;
@@ -195,7 +186,24 @@
   };
   document.getElementById('clearUser').onclick = ()=> userLayer.clearLayers();
 
-  // POIs via Overpass
+  // ===== On‑load geocode for your apartment (no guessing) =====
+  (async function locateApartment(){
+    const address = '39 Beach Road, Sea Point, Cape Town';
+    try{
+      const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(address);
+      const res = await fetch(url, { headers:{'Accept-Language':'en'} });
+      const js  = await res.json();
+      if (js && js[0]){
+        const lat = parseFloat(js[0].lat), lon = parseFloat(js[0].lon);
+        addDraggableMarker(lat, lon, 'Your Apartment — 39 Beach Road').openPopup();
+        map.setView([lat,lon], 17);
+      } else {
+        // fallback: don’t place anything if we can’t verify
+      }
+    }catch(e){}
+  })();
+
+  // ===== POIs via Overpass =====
   const poiFood = L.layerGroup().addTo(map);
   const poiSights = L.layerGroup().addTo(map);
   const poiStatus = document.getElementById('poiStatus');
@@ -231,46 +239,72 @@
   document.getElementById('poiFood').onchange = (e)=> e.target.checked ? map.addLayer(poiFood) : map.removeLayer(poiFood);
   document.getElementById('poiSights').onchange = (e)=> e.target.checked ? map.addLayer(poiSights) : map.removeLayer(poiSights);
 
-  // MyCiTi routes (highlight 104)
-  const ROUTE_SERVICES = [
-    'https://citymaps.capetown.gov.za/agsext/rest/services/Theme_Based/Open_Data_Service/FeatureServer/95',
-    'https://citymaps.capetown.gov.za/agsext/rest/services/Theme_Based/ODP_SPLIT_6/FeatureServer/9',
-    'https://gis.westerncape.gov.za/server2/rest/services/SpatialDataWarehouse/Transportation/MapServer/9'
-  ];
+  // ===== MyCiTi routes (highlight 104) =====
   const allRoutes = L.layerGroup().addTo(map);
   const route104  = L.layerGroup().addTo(map);
   const styleAll  = { color:'#8a8a8a', weight:2, opacity:0.7 };
   const style104  = { color:'#fff6a6', weight:6, opacity:0.95 }; // pale yellow
   const routeStatus = document.getElementById('routeStatus');
 
-  function looksLike104(props){
-    const fields = ['ROUTE_NO','ROUTENUMBER','ROUTE','ROUTENAME','NAME','LINENAME','LINE_NAME','LINEID','SHORT_NAME','LONG_NAME','DESC'];
-    let text = '';
-    fields.forEach(k => { if (props && props[k]!=null) text += ' ' + String(props[k]); });
-    return /\b104\b/.test(text);
-  }
-  async function fetchGeoJSON(service){
+  // Candidate FeatureServer layers we can query
+  const ROUTE_SERVICES = [
+    'https://citymaps.capetown.gov.za/agsext/rest/services/Theme_Based/Open_Data_Service/FeatureServer/95',
+    'https://citymaps.capetown.gov.za/agsext/rest/services/Theme_Based/ODP_SPLIT_6/FeatureServer/9',
+    'https://gis.westerncape.gov.za/server2/rest/services/SpatialDataWarehouse/Transportation/MapServer/9'
+  ];
+  // “All routes” is drawn via a simple 1=1 query:
+  async function fetchAllRoutes(service){
     const url = service + '/query?where=1%3D1&outFields=*&f=geojson&outSR=4326';
-    const res = await fetch(url, { cache:'no-store' });
-    if (!res.ok) throw new Error('ArcGIS fetch failed');
-    return res.json();
+    const r = await fetch(url, { cache:'no-store' });
+    if (!r.ok) throw new Error('ArcGIS fetch failed');
+    return r.json();
   }
-  function addRoutes(geojson){
-    let count104 = 0;
-    L.geoJSON(geojson, { style:()=>styleAll, onEachFeature:(f,layer)=> allRoutes.addLayer(layer) });
-    L.geoJSON(geojson, {
-      filter:(f)=> { const hit = looksLike104(f && f.properties ? f.properties : {}); if (hit) count104++; return hit; },
-      style:()=>style104, onEachFeature:(f,layer)=> route104.addLayer(layer)
-    });
-    routeStatus.textContent = count104>0 ? 'Route 104 highlighted.' : '';
-    if (!count104) routeStatus.innerHTML = '<span class="warn">Could not find route 104 in this dataset.</span>';
+  function drawAll(gj){ L.geoJSON(gj, { style:()=>styleAll, onEachFeature:(f,layer)=> allRoutes.addLayer(layer) }); }
+
+  // Try multiple field names/where clauses to find “104”
+  const WHERE_104 = [
+    "ROUTE_NO=104",
+    "ROUTENUMBER=104",
+    "SHORT_NAME='104'",
+    "LONG_NAME LIKE '%104%'",
+    "ROUTE LIKE '%104%'",
+    "ROUTENAME LIKE '%104%'",
+    "NAME LIKE '%104%'",
+    "LINE_NAME LIKE '%104%'",
+    "LINENAME LIKE '%104%'"
+  ];
+  async function tryFind104(service){
+    // First, draw all routes so you at least see the network
+    try{
+      const all = await fetchAllRoutes(service);
+      drawAll(all);
+    }catch(_){}
+    for (let w of WHERE_104){
+      const url = service + '/query?where=' + encodeURIComponent(w) + '&outFields=*&f=geojson&outSR=4326';
+      try{
+        const r = await fetch(url, { cache:'no-store' });
+        if (!r.ok) continue;
+        const gj = await r.json();
+        let has = false;
+        L.geoJSON(gj, {
+          style: ()=> style104,
+          onEachFeature: (f, layer)=>{ has=true; route104.addLayer(layer); }
+        });
+        if (has) return true;
+      }catch(_){}
+    }
+    return false;
   }
   (async function loadRoutes(){
     for (let i=0;i<ROUTE_SERVICES.length;i++){
-      try{ const gj = await fetchGeoJSON(ROUTE_SERVICES[i]); addRoutes(gj); break; }
-      catch(e){ if (i===ROUTE_SERVICES.length-1) routeStatus.innerHTML = '<span class="warn">Routes unavailable (service blocked or offline).</span>'; }
+      const ok = await tryFind104(ROUTE_SERVICES[i]);
+      if (ok){ routeStatus.textContent = 'Route 104 highlighted.'; break; }
+      if (i===ROUTE_SERVICES.length-1){
+        routeStatus.innerHTML = '<span class="warn">Could not find route 104 in the available datasets.</span>';
+      }
     }
   })();
+
   document.getElementById('toggleRoutes').onchange = (e)=> e.target.checked ? map.addLayer(allRoutes) : map.removeLayer(allRoutes);
   document.getElementById('toggle104').onchange   = (e)=> e.target.checked ? map.addLayer(route104)  : map.removeLayer(route104);
 })();
