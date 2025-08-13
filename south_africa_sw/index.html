@@ -2,10 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>MapMe — Cape Town (iPad Touch‑Optimized)</title>
 
-<!-- Leaflet CSS -->
 <link rel="preconnect" href="https://unpkg.com">
 <link rel="dns-prefetch" href="https://unpkg.com">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
@@ -18,7 +17,7 @@
     padding:14px; box-sizing:border-box; background:#fafafa; border-right:1px solid #ddd;
     overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
-  #map{ flex:1; }
+  #map{ flex:1; min-height:300px; height:100%; }
   h1{ font-size:18px; margin:0 0 10px; }
   .group{ margin-bottom:14px; }
   label{ display:block; margin:8px 0; font-size:16px; }
@@ -76,11 +75,12 @@
     <div class="group">
       <strong>Add a Place</strong>
       <div class="hint">Enter an address or <code>lat,lon</code>. Tap “Add”. Long‑press map to drop a pin.</div>
-      <input id="placeInput" type="text" placeholder="e.g., 39 Beach Road, Cape Town  or  -33.907, 18.409">
+      <input id="placeInput" type="text" inputmode="text" placeholder="e.g., 39 Beach Road, Cape Town  or  -33.909, 18.400">
       <div style="margin-top:8px; display:flex; gap:8px;">
         <button id="addBtn">Add</button>
         <button id="clearUser">Clear Added</button>
       </div>
+      <div id="addStatus" class="hint" aria-live="polite"></div>
     </div>
 
     <div class="group">
@@ -104,11 +104,14 @@
   <div id="map" role="region" aria-label="Interactive Cape Town map"></div>
 </div>
 
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
-
 <script>
 (function(){
+  // iPad zoom “snap-back” fix: when Safari UI changes height, reflow tiles instead of jumping zoom
+  function refresh(){ map.invalidateSize({animate:false}); }
+  window.addEventListener('resize', refresh, {passive:true});
+  window.addEventListener('orientationchange', refresh, {passive:true});
+
   // --- Map setup ---
   const map = L.map('map', { zoomControl:true, tap:true, preferCanvas:true })
                .setView([-33.9075, 18.4207], 13);
@@ -123,8 +126,8 @@
 
   document.querySelectorAll('input[name="basemap"]').forEach(r=>{
     r.addEventListener('change', ()=>{
-      if (r.value === 'osm'){ map.addLayer(osm); map.removeLayer(esriSat); }
-      else { map.addLayer(esriSat); map.removeLayer(osm); }
+      if (r.value === 'osm'){ if(!map.hasLayer(osm)) map.addLayer(osm); map.removeLayer(esriSat); }
+      else { if(!map.hasLayer(esriSat)) map.addLayer(esriSat); map.removeLayer(osm); }
     });
   });
 
@@ -141,8 +144,8 @@
     return m;
   }
 
-  // Pre-pin apartment (approx for 39 Beach Road)
-  addDraggableMarker(-33.90750, 18.40930, 'Your Apartment — 39 Beach Road');
+  // Pre-pin apartment (corrected for 39 Beach Road, Sea Point)
+  addDraggableMarker(-33.90905, 18.39962, 'Your Apartment — 39 Beach Road');
 
   // Long‑press to drop a pin
   let pressTimer, pressStart=null;
@@ -151,26 +154,35 @@
   }, 550); });
   map.on('touchend', ()=>{ clearTimeout(pressTimer); pressStart=null; });
 
-  // Add-a-place input
+  // --- Add-a-Place (with small UX status) ---
+  const addStatus = document.getElementById('addStatus');
+  function setAddStatus(msg){ addStatus.textContent = msg || ''; }
+  function parseLatLon(txt){
+    const m = txt.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+    return m ? {lat: parseFloat(m[1]), lon: parseFloat(m[2])} : null;
+  }
+  async function geocode(query){
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=0&namedetails=0&accept-language=en&q=' + encodeURIComponent(query);
+    const res = await fetch(url, { headers:{'Accept-Language':'en'} });
+    if(!res.ok) throw new Error('Geocoder HTTP '+res.status);
+    const js = await res.json();
+    if (Array.isArray(js) && js[0]) return { lat: parseFloat(js[0].lat), lon: parseFloat(js[0].lon) };
+    return null;
+  }
   document.getElementById('addBtn').onclick = async ()=>{
     const v = document.getElementById('placeInput').value.trim();
-    if(!v) return;
-    const m = v.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
-    if (m){
-      const lat = parseFloat(m[1]), lon = parseFloat(m[2]);
-      addDraggableMarker(lat, lon, v); map.setView([lat,lon], 16); return;
-    }
+    if(!v){ setAddStatus('Enter an address or lat,lon'); return; }
+    setAddStatus('Finding place…');
+    const coords = parseLatLon(v);
     try{
-      const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(v);
-      const res = await fetch(url, { headers:{'Accept-Language':'en'} });
-      const js  = await res.json();
-      if (js && js[0]){
-        const lat = parseFloat(js[0].lat), lon = parseFloat(js[0].lon);
-        addDraggableMarker(lat, lon, v); map.setView([lat,lon], 16);
-      } else { alert('No result found. Try coordinates lat,lon.'); }
-    }catch(e){ alert('Geocoding error. Try coordinates lat,lon.'); }
+      const latlon = coords || await geocode(v);
+      if (!latlon){ setAddStatus('No result. Try -33.909, 18.400'); return; }
+      addDraggableMarker(latlon.lat, latlon.lon, v);
+      map.setView([latlon.lat, latlon.lon], 16);
+      setAddStatus('Added ✓'); setTimeout(()=>setAddStatus(''),1200);
+    }catch(e){ setAddStatus('Geocoding blocked/offline. Try lat,lon.'); }
   };
-  document.getElementById('clearUser').onclick = ()=> userLayer.clearLayers();
+  document.getElementById('clearUser').onclick = ()=> { userLayer.clearLayers(); setAddStatus('Cleared added pins.'); setTimeout(()=>setAddStatus(''),1000); };
 
   // --- POIs around V&A Waterfront via Overpass ---
   const poiFood = L.layerGroup().addTo(map);
@@ -189,16 +201,17 @@
       out center;`.replace(/bbox/g, bbox.join(','));
     try{
       const r = await fetch(overpass, { method:'POST', body:query, headers:{'Content-Type':'text/plain'} });
+      if(!r.ok) throw new Error('Overpass HTTP '+r.status);
       const j = await r.json();
       (j.elements||[]).forEach(el=>{
         const lat = el.lat || (el.center && el.center.lat);
         const lon = el.lon || (el.center && el.center.lon);
         if (lat==null || lon==null) return;
         const name = (el.tags && el.tags.name) ? el.tags.name : 'Unnamed';
-        const cat  = (el.tags && el.tags.amenity) ? 'food' : 'sight';
-        const marker = L.circleMarker([lat,lon], { radius:6, weight:1 });
-        marker.bindPopup(`<strong>${name}</strong><br>${cat==='food'?'Restaurant/Café':'Sight/Attraction'}`);
-        if (cat==='food') marker.addTo(poiFood); else marker.addTo(poiSights);
+        const isFood  = !!(el.tags && el.tags.amenity);
+        const marker = L.circleMarker([lat,lon], { radius:6, weight:1, color: isFood ? '#c66' : '#336', fillOpacity:0.25 });
+        marker.bindPopup(`<strong>${name}</strong><br>${isFood?'Restaurant/Café':'Sight/Attraction'}`);
+        (isFood ? poiFood : poiSights).addLayer(marker);
       });
       poiStatus.textContent = '';
     }catch(e){
@@ -218,46 +231,50 @@
   ];
   const allRoutes = L.layerGroup().addTo(map);
   const route104  = L.layerGroup().addTo(map);
-  const styleAll  = { color:'#8a8a8a', weight:2, opacity:0.7 };
-  const style104  = { color:'#fff6a6', weight:6, opacity:0.95 }; // pale yellow
+
+  // explicit styles so there’s no fallback to Leaflet’s default blue
+  const styleAll  = { color:'#8a8a8a', weight:2, opacity:0.7, lineCap:'round', lineJoin:'round' };
+  const style104  = { color:'#fff6a6', weight:6, opacity:0.95, lineCap:'round', lineJoin:'round' }; // pale yellow
+
   const routeStatus = document.getElementById('routeStatus');
 
   function looksLike104(props){
     const keys = Object.keys(props||{});
     const fields = ['ROUTE_NO','ROUTENUMBER','ROUTE','ROUTENAME','NAME','LINENAME','LINE_NAME','LINEID','SHORT_NAME','LONG_NAME','DESC'];
-    var text = '';
-    for (var i=0;i<fields.length;i++){ var k = fields[i]; if (keys.indexOf(k)>-1 && props[k]!=null){ text += ' ' + String(props[k]); } }
+    let text = '';
+    for (let i=0;i<fields.length;i++){ const k = fields[i]; if (keys.includes(k) && props[k]!=null){ text += ' ' + String(props[k]); } }
     return /\b104\b/.test(text);
   }
 
   async function fetchGeoJSON(service){
     const url = service + '/query?where=1%3D1&outFields=*&f=geojson&outSR=4326';
     const res = await fetch(url, { cache:'no-store' });
-    if (!res.ok) throw new Error('ArcGIS fetch failed');
+    if (!res.ok) throw new Error('ArcGIS fetch failed: '+res.status);
     return res.json();
   }
 
   function addRoutes(geojson){
-    var count104 = 0;
+    let count104 = 0;
     L.geoJSON(geojson, {
-      style: function(){ return styleAll; },
-      onEachFeature: function(f, layer){ allRoutes.addLayer(layer); }
+      style: ()=> styleAll,
+      onEachFeature: (f, layer)=> allRoutes.addLayer(layer)
     });
     L.geoJSON(geojson, {
-      filter: function(f){ var hit = looksLike104(f && f.properties ? f.properties : {}); if (hit) count104++; return hit; },
-      style: function(){ return style104; },
-      onEachFeature: function(f, layer){ route104.addLayer(layer); }
+      filter: (f)=> { const hit = looksLike104(f && f.properties ? f.properties : {}); if (hit) count104++; return hit; },
+      style: ()=> style104,
+      onEachFeature: (f, layer)=> route104.addLayer(layer)
     });
     if (count104>0){ routeStatus.textContent = 'Route 104 highlighted.'; }
     else { routeStatus.innerHTML = '<span class="warn">Could not find route 104 in this dataset.</span>'; }
   }
 
   (async function loadRoutes(){
-    for (var i=0;i<ROUTE_SERVICES.length;i++){
+    for (let i=0;i<ROUTE_SERVICES.length;i++){
       try{
         const gj = await fetchGeoJSON(ROUTE_SERVICES[i]);
         addRoutes(gj);
-        routeStatus.textContent = routeStatus.textContent || 'Routes loaded.';
+        if(!routeStatus.textContent) routeStatus.textContent = 'Routes loaded.';
+        syncRouteToggles(); // ensure checkbox state applies after load
         break;
       }catch(e){
         if (i === ROUTE_SERVICES.length-1){
@@ -267,8 +284,18 @@
     }
   })();
 
-  document.getElementById('toggleRoutes').onchange = function(e){ e.target.checked ? map.addLayer(allRoutes) : map.removeLayer(allRoutes); };
-  document.getElementById('toggle104').onchange   = function(e){ e.target.checked ? map.addLayer(route104)  : map.removeLayer(route104); };
+  // robust checkbox handlers
+  const chkAll  = document.getElementById('toggleRoutes');
+  const chk104  = document.getElementById('toggle104');
+  function syncRouteToggles(){
+    if (chkAll.checked)  { if(!map.hasLayer(allRoutes)) map.addLayer(allRoutes); }
+    else                 { if(map.hasLayer(allRoutes))  map.removeLayer(allRoutes); }
+
+    if (chk104.checked)  { if(!map.hasLayer(route104))  map.addLayer(route104); }
+    else                 { if(map.hasLayer(route104))   map.removeLayer(route104); }
+  }
+  chkAll.addEventListener('change', syncRouteToggles);
+  chk104.addEventListener('change', syncRouteToggles);
 })();
 </script>
 </body>
